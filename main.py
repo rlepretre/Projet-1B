@@ -16,8 +16,19 @@ cv_file.release()
 # else:
 #     print("Creating calibration file")
 #     ret, mtx, dist, rvecs, tvecs = calibrate()
-print(mtx)
+
 aruco_dict = cv2.aruco.Dictionary_get(cv2.aruco.DICT_6X6_250)
+
+
+axis = np.float32([[1, 0, 0], [0, 1, 0], [0, 0, -0.1]]).reshape(-1, 3)
+
+cubePoints = np.float32([[0,0,0], [0,0.1,0], [0.1,0.1,0], [0.1,0,0],
+                   [0,0,0.1],[0,0.1,0.1],[0.1,0.1,0.1],[0.1,0,0.1] ])
+cubePoints = cubePoints - [0.05, 0.05, 0.]
+
+pyraPoints = np.float32([[0,0,0], [0,0.1,0], [0.1,0.1,0], [0.1,0,0],
+                   [0.05,0.05,0.1]])
+pyraPoints = pyraPoints - [0.05, 0.05, 0.]
 
 cv2.namedWindow("Mac Camera")
 vc = cv2.VideoCapture(0)
@@ -29,9 +40,10 @@ else:
 
 while rval:
 
+    rvecs = np.empty((0, 1, 3))
+    tvecs = np.empty((0, 1, 3))
 
     rval, frame = vc.read()
-
 
     gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
     aruco_dict = cv2.aruco.Dictionary_get(cv2.aruco.DICT_6X6_250)
@@ -39,20 +51,34 @@ while rval:
     corners, ids, rejectedImgPoints = cv2.aruco.detectMarkers(
         gray, aruco_dict, parameters=parameters)
     if np.all(ids is not None):
-        for i in range(0, len(ids)):
-            rvec, tvec, markerPoints = cv2.aruco.estimatePoseSingleMarkers(
-                corners[i], 0.02, mtx, dist)
-            (rvec - tvec).any()  # get rid of that nasty numpy value array error
-        # frame_markers = cv2.aruco.drawDetectedMarkers(
-        #     frame.copy(), corners, ids)
-        # axis = cv2.aruco.drawAxis(frame, mtx, dist, rvec,
-        #                           tvec, 0.01)  # Draw axis
-        print(imgpts.shape)
-        frame = drawCube(frame, imgpts)
-    
+
+        for i in range(ids.size):
+            rvec, tvec, _ = cv2.aruco.estimatePoseSingleMarkers(
+                corners[i], 0.1, mtx, dist)
+
+            rvecs = np.vstack((rvecs, rvec))
+            tvecs = np.vstack((tvecs, tvec))
+
+        ind = np.argsort(tvecs[:, 0, 2])[::-1]
+        tvecs = tvecs[ind]
+        rvecs = rvecs[ind]
+
+        if(ids.size == ind.size):
+            ids = ids[ind]
+
+        for i in range(ids.size):
+            if ids[i] == 0:
+                imgpts, _ = cv2.projectPoints(
+                    cubePoints, rvecs[i], tvecs[i], mtx, dist)
+                frame = drawCube(frame, corners[i].astype(int), imgpts.astype(int))
+
+            if ids[i] == 1:
+                imgpts, _ = cv2.projectPoints(
+                    pyraPoints, rvecs[i], tvecs[i], mtx, dist)
+                frame = drawPyramid(frame, corners[i].astype(int), imgpts)
+
     frame = cv2.flip(frame, 1)
     cv2.imshow("Mac Camera", frame)
-    print("loop over")
     if cv2.waitKey(1) & 0xFF == ord('q'):
         break
 
